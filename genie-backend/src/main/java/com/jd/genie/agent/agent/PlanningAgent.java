@@ -22,6 +22,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * 规划代理 - 创建和管理任务计划的代理
@@ -57,11 +59,12 @@ public class PlanningAgent extends ReActAgent {
                 .replace("{{query}}", context.getQuery())
                 .replace("{{date}}", context.getDateInfo())
                 .replace("{{sopPrompt}}", context.getSopPrompt()));
-        setNextStepPrompt(genieConfig.getPlannerNextStepPromptMap().getOrDefault(nextPromptKey, PlanningPrompt.NEXT_STEP_PROMPT)
-                .replace("{{tools}}", toolPrompt.toString())
-                .replace("{{query}}", context.getQuery())
-                .replace("{{date}}", context.getDateInfo())
-                .replace("{{sopPrompt}}", context.getSopPrompt()));
+        setNextStepPrompt(
+                genieConfig.getPlannerNextStepPromptMap().getOrDefault(nextPromptKey, PlanningPrompt.NEXT_STEP_PROMPT)
+                        .replace("{{tools}}", toolPrompt.toString())
+                        .replace("{{query}}", context.getQuery())
+                        .replace("{{date}}", context.getDateInfo())
+                        .replace("{{sopPrompt}}", context.getSopPrompt()));
 
         setSystemPromptSnapshot(getSystemPrompt());
         setNextStepPromptSnapshot(getNextStepPrompt());
@@ -106,8 +109,7 @@ public class PlanningAgent extends ReActAgent {
                     getMemory().getMessages(),
                     Message.systemMessage(getSystemPrompt(), null),
                     availableTools,
-                    ToolChoice.AUTO, null, context.getIsStream(), 300
-            );
+                    ToolChoice.AUTO, null, context.getIsStream(), 300);
 
             LLM.ToolCallResponse response = future.get();
             setToolCalls(response.getToolCalls());
@@ -123,15 +125,23 @@ public class PlanningAgent extends ReActAgent {
                     response.getToolCalls() != null ? response.getToolCalls().size() : 0);
 
             // 创建并添加助手消息
-            Message assistantMsg = response.getToolCalls() != null && !response.getToolCalls().isEmpty() && !"struct_parse".equals(llm.getFunctionCallType()) ?
-                    Message.fromToolCalls(response.getContent(), response.getToolCalls()) :
-                    Message.assistantMessage(response.getContent(), null);
+            Message assistantMsg = response.getToolCalls() != null && !response.getToolCalls().isEmpty()
+                    && !"struct_parse".equals(llm.getFunctionCallType())
+                            ? Message.fromToolCalls(response.getContent(), response.getToolCalls())
+                            : Message.assistantMessage(response.getContent(), null);
 
             getMemory().addMessage(assistantMsg);
 
         } catch (Exception e) {
 
             log.error("{} think error ", context.getRequestId(), e);
+            // 推送结构化错误信息到前端
+            if (printer != null) {
+                Map<String, Object> errorMsg = new HashMap<>();
+                errorMsg.put("error", "LLM服务异常: " + e.getMessage());
+                errorMsg.put("agent", getName());
+                printer.send("error", errorMsg);
+            }
         }
 
         return true;
@@ -163,12 +173,10 @@ public class PlanningAgent extends ReActAgent {
                 Message toolMsg = Message.toolMessage(
                         result,
                         toolCall.getId(),
-                        null
-                );
+                        null);
                 getMemory().addMessage(toolMsg);
             }
         }
-
 
         if (Objects.nonNull(planningTool.getPlan())) {
             if (isColseUpdate) {
@@ -179,7 +187,6 @@ public class PlanningAgent extends ReActAgent {
 
         return String.join("\n\n", results);
     }
-
 
     private String getNextTask() {
         boolean allComplete = true;

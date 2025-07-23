@@ -55,13 +55,16 @@ public class ExecutorAgent extends ReActAgent {
                 .replace("{{query}}", context.getQuery())
                 .replace("{{date}}", context.getDateInfo())
                 .replace("{{sopPrompt}}", context.getSopPrompt())
-                .replace("{{executorSopPrompt}}", genieConfig.getExecutorSopPromptMap().getOrDefault(sopPromptKey, "")));
-        setNextStepPrompt(genieConfig.getExecutorNextStepPromptMap().getOrDefault(nextPromptKey, ToolCallPrompt.NEXT_STEP_PROMPT)
-                .replace("{{tools}}", toolPrompt.toString())
-                .replace("{{query}}", context.getQuery())
-                .replace("{{date}}", context.getDateInfo())
-                .replace("{{sopPrompt}}", context.getSopPrompt())
-                .replace("{{executorSopPrompt}}", genieConfig.getExecutorSopPromptMap().getOrDefault(sopPromptKey, "")));
+                .replace("{{executorSopPrompt}}",
+                        genieConfig.getExecutorSopPromptMap().getOrDefault(sopPromptKey, "")));
+        setNextStepPrompt(
+                genieConfig.getExecutorNextStepPromptMap().getOrDefault(nextPromptKey, ToolCallPrompt.NEXT_STEP_PROMPT)
+                        .replace("{{tools}}", toolPrompt.toString())
+                        .replace("{{query}}", context.getQuery())
+                        .replace("{{date}}", context.getDateInfo())
+                        .replace("{{sopPrompt}}", context.getSopPrompt())
+                        .replace("{{executorSopPrompt}}",
+                                genieConfig.getExecutorSopPromptMap().getOrDefault(sopPromptKey, "")));
 
         setSystemPromptSnapshot(getSystemPrompt());
         setNextStepPromptSnapshot(getNextStepPrompt());
@@ -100,8 +103,7 @@ public class ExecutorAgent extends ReActAgent {
                     getMemory().getMessages(),
                     Message.systemMessage(getSystemPrompt(), null),
                     availableTools,
-                    ToolChoice.AUTO, null, false, 300
-            );
+                    ToolChoice.AUTO, null, false, 300);
 
             LLM.ToolCallResponse response = future.get();
             setToolCalls(response.getToolCalls());
@@ -124,14 +126,22 @@ public class ExecutorAgent extends ReActAgent {
             }
 
             // 创建并添加助手消息
-            Message assistantMsg = response.getToolCalls() != null && !response.getToolCalls().isEmpty() && !"struct_parse".equals(llm.getFunctionCallType()) ?
-                    Message.fromToolCalls(response.getContent(), response.getToolCalls()) :
-                    Message.assistantMessage(response.getContent(), null);
+            Message assistantMsg = response.getToolCalls() != null && !response.getToolCalls().isEmpty()
+                    && !"struct_parse".equals(llm.getFunctionCallType())
+                            ? Message.fromToolCalls(response.getContent(), response.getToolCalls())
+                            : Message.assistantMessage(response.getContent(), null);
             getMemory().addMessage(assistantMsg);
 
         } catch (Exception e) {
 
             log.error("Oops! The " + getName() + "'s thinking process hit a snag: " + e.getMessage());
+            // 推送结构化错误信息到前端
+            if (printer != null) {
+                Map<String, Object> errorMsg = new HashMap<>();
+                errorMsg.put("error", "LLM服务异常: " + e.getMessage());
+                errorMsg.put("agent", getName());
+                printer.send("error", errorMsg);
+            }
             getMemory().addMessage(Message.assistantMessage(
                     "Error encountered while processing: " + e.getMessage(), null));
             setState(AgentState.FINISHED);
@@ -160,13 +170,14 @@ public class ExecutorAgent extends ReActAgent {
         List<String> results = new ArrayList<>();
         for (ToolCall command : toolCalls) {
             String result = toolResults.get(command.getId());
-            if (!Arrays.asList("code_interpreter", "report_tool", "file_tool", "deep_search").contains(command.getFunction().getName())) {
+            if (!Arrays.asList("code_interpreter", "report_tool", "file_tool", "deep_search")
+                    .contains(command.getFunction().getName())) {
                 String toolName = command.getFunction().getName();
                 printer.send("tool_result", AgentResponse.ToolResult.builder()
-                                .toolName(toolName)
-                                .toolParam(JSON.parseObject(command.getFunction().getArguments(), Map.class))
-                                .toolResult(result)
-                                .build(), null);
+                        .toolName(toolName)
+                        .toolParam(JSON.parseObject(command.getFunction().getArguments(), Map.class))
+                        .toolResult(result)
+                        .build(), null);
             }
             if (maxObserve != null) {
                 result = result.substring(0, Math.min(result.length(), maxObserve));
@@ -180,8 +191,7 @@ public class ExecutorAgent extends ReActAgent {
                 Message toolMsg = Message.toolMessage(
                         result,
                         command.getId(),
-                        null
-                );
+                        null);
                 getMemory().addMessage(toolMsg);
             }
             results.add(result);

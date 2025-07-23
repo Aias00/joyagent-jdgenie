@@ -8,7 +8,7 @@ import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 /**
@@ -23,16 +23,14 @@ public class ToolCollection {
 
     /**
      * 数字员工列表
-     * task未并发的情况下
-     * 1、每一个task，执行时，数字员工列表就会更新
-     * TODO 并发情况下需要处理
+     * 使用synchronized确保线程安全
      */
-    private String currentTask;
-    private JSONObject digitalEmployees;
+    private volatile String currentTask;
+    private volatile JSONObject digitalEmployees;
 
     public ToolCollection() {
-        this.toolMap = new HashMap<>();
-        this.mcpToolMap = new HashMap<>();
+        this.toolMap = new ConcurrentHashMap<>();
+        this.mcpToolMap = new ConcurrentHashMap<>();
     }
 
     /**
@@ -68,7 +66,6 @@ public class ToolCollection {
         return mcpToolMap.get(name);
     }
 
-
     /**
      * 执行工具
      */
@@ -88,9 +85,9 @@ public class ToolCollection {
     }
 
     /**
-     * 设置数字员工
+     * 设置数字员工 - 线程安全
      */
-    public void updateDigitalEmployee(JSONObject digitalEmployee) {
+    public synchronized void updateDigitalEmployee(JSONObject digitalEmployee) {
         if (digitalEmployee == null) {
             log.error("requestId:{} setDigitalEmployee: {}", agentContext.getRequestId(), digitalEmployee);
         }
@@ -98,9 +95,23 @@ public class ToolCollection {
     }
 
     /**
-     * 获取数字员工名称
+     * 设置当前任务 - 线程安全
      */
-    public String getDigitalEmployee(String toolName) {
+    public synchronized void setCurrentTask(String task) {
+        this.currentTask = task;
+    }
+
+    /**
+     * 获取当前任务 - 线程安全
+     */
+    public synchronized String getCurrentTask() {
+        return this.currentTask;
+    }
+
+    /**
+     * 获取数字员工名称 - 线程安全
+     */
+    public synchronized String getDigitalEmployee(String toolName) {
         if (StringUtils.isEmpty(toolName)) {
             return null;
         }

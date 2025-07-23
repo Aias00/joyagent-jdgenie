@@ -53,11 +53,12 @@ public class ReactImplAgent extends ReActAgent {
                 .replace("{{query}}", context.getQuery())
                 .replace("{{date}}", context.getDateInfo())
                 .replace("{{basePrompt}}", context.getBasePrompt()));
-        setNextStepPrompt(genieConfig.getReactNextStepPromptMap().getOrDefault(nextPromptKey, ToolCallPrompt.NEXT_STEP_PROMPT)
-                .replace("{{tools}}", toolPrompt.toString())
-                .replace("{{query}}", context.getQuery())
-                .replace("{{date}}", context.getDateInfo())
-                .replace("{{basePrompt}}", context.getBasePrompt()));
+        setNextStepPrompt(
+                genieConfig.getReactNextStepPromptMap().getOrDefault(nextPromptKey, ToolCallPrompt.NEXT_STEP_PROMPT)
+                        .replace("{{tools}}", toolPrompt.toString())
+                        .replace("{{query}}", context.getQuery())
+                        .replace("{{date}}", context.getDateInfo())
+                        .replace("{{basePrompt}}", context.getBasePrompt()));
 
         setSystemPromptSnapshot(getSystemPrompt());
         setNextStepPromptSnapshot(getNextStepPrompt());
@@ -92,8 +93,7 @@ public class ReactImplAgent extends ReActAgent {
                     getMemory().getMessages(),
                     Message.systemMessage(getSystemPrompt(), null),
                     availableTools,
-                    ToolChoice.AUTO, null, context.getIsStream(), 300
-            );
+                    ToolChoice.AUTO, null, context.getIsStream(), 300);
 
             LLM.ToolCallResponse response = future.get();
 
@@ -106,14 +106,22 @@ public class ReactImplAgent extends ReActAgent {
             }
 
             // 创建并添加助手消息
-            Message assistantMsg = response.getToolCalls() != null && !response.getToolCalls().isEmpty() && !"struct_parse".equals(llm.getFunctionCallType()) ?
-                    Message.fromToolCalls(response.getContent(), response.getToolCalls()) :
-                    Message.assistantMessage(response.getContent(), null);
+            Message assistantMsg = response.getToolCalls() != null && !response.getToolCalls().isEmpty()
+                    && !"struct_parse".equals(llm.getFunctionCallType())
+                            ? Message.fromToolCalls(response.getContent(), response.getToolCalls())
+                            : Message.assistantMessage(response.getContent(), null);
             getMemory().addMessage(assistantMsg);
 
         } catch (Exception e) {
 
             log.error("{} react think error", context.getRequestId(), e);
+            // 推送结构化错误信息到前端
+            if (printer != null) {
+                Map<String, Object> errorMsg = new HashMap<>();
+                errorMsg.put("error", "LLM服务异常: " + e.getMessage());
+                errorMsg.put("agent", getName());
+                printer.send("error", errorMsg);
+            }
             getMemory().addMessage(Message.assistantMessage(
                     "Error encountered while processing: " + e.getMessage(), null));
             setState(AgentState.FINISHED);
@@ -136,7 +144,8 @@ public class ReactImplAgent extends ReActAgent {
         List<String> results = new ArrayList<>();
         for (ToolCall command : toolCalls) {
             String result = toolResults.get(command.getId());
-            if (!Arrays.asList("code_interpreter", "report_tool", "file_tool", "deep_search").contains(command.getFunction().getName())) {
+            if (!Arrays.asList("code_interpreter", "report_tool", "file_tool", "deep_search")
+                    .contains(command.getFunction().getName())) {
                 String toolName = command.getFunction().getName();
                 printer.send("tool_result", AgentResponse.ToolResult.builder()
                         .toolName(toolName)
@@ -157,8 +166,7 @@ public class ReactImplAgent extends ReActAgent {
                 Message toolMsg = Message.toolMessage(
                         result,
                         command.getId(),
-                        null
-                );
+                        null);
                 getMemory().addMessage(toolMsg);
             }
             results.add(result);

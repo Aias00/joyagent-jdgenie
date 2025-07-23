@@ -1,6 +1,5 @@
 package com.jd.genie.service.impl;
 
-
 import com.jd.genie.agent.agent.AgentContext;
 import com.jd.genie.agent.agent.ExecutorAgent;
 import com.jd.genie.agent.agent.PlanningAgent;
@@ -22,6 +21,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.stream.Collectors;
+import com.jd.genie.agent.tool.ToolCollection;
 
 @Slf4j
 @Component
@@ -29,7 +29,6 @@ public class PlanSolveHandlerImpl implements AgentHandlerService {
 
     @Autowired
     private GenieConfig genieConfig;
-
 
     @Override
     public String handle(AgentContext agentContext, AgentRequest request) {
@@ -57,6 +56,14 @@ public class PlanSolveHandlerImpl implements AgentHandlerService {
                 List<ExecutorAgent> slaveExecutors = new ArrayList<>();
                 for (String task : planningResults) {
                     ExecutorAgent slaveExecutor = new ExecutorAgent(agentContext);
+                    // 为每个slaveExecutor创建独立的ToolCollection副本，避免并发问题
+                    ToolCollection independentToolCollection = new ToolCollection();
+                    independentToolCollection.setAgentContext(agentContext);
+                    // 复制工具配置
+                    independentToolCollection.getToolMap().putAll(agentContext.getToolCollection().getToolMap());
+                    independentToolCollection.getMcpToolMap().putAll(agentContext.getToolCollection().getMcpToolMap());
+                    // 设置独立的ToolCollection
+                    slaveExecutor.setAvailableTools(independentToolCollection);
                     slaveExecutor.setState(executor.getState());
                     slaveExecutor.getMemory().addMessages(executor.getMemory().getMessages());
                     slaveExecutors.add(slaveExecutor);
@@ -78,8 +85,9 @@ public class PlanSolveHandlerImpl implements AgentHandlerService {
             }
             planningResult = planning.run(executorResult);
             if ("finish".equals(planningResult)) {
-                //任务成功结束，总结任务
-                TaskSummaryResult result = summary.summaryTaskResult(executor.getMemory().getMessages(), request.getQuery());
+                // 任务成功结束，总结任务
+                TaskSummaryResult result = summary.summaryTaskResult(executor.getMemory().getMessages(),
+                        request.getQuery());
 
                 Map<String, Object> taskResult = new HashMap<>();
                 taskResult.put("taskSummary", result.getTaskSummary());
@@ -97,7 +105,6 @@ public class PlanSolveHandlerImpl implements AgentHandlerService {
                 }
 
                 agentContext.getPrinter().send("result", taskResult);
-
 
                 break;
             }
